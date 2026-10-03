@@ -1,167 +1,410 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NutriChef — Tutor inteligente con LLM</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <style>
-    body { background: #f4f6f9; }
-    .chat-card { height: 70vh; }
-    #chatBox { overflow-y: auto; }
-    .msg { max-width: 80%; padding: .65rem .9rem; border-radius: 1rem; white-space: pre-wrap; }
-    .msg-user { background: #0d6efd; color: #fff; margin-left: auto; border-bottom-right-radius: .25rem; }
-    .msg-bot  { background: #fff; border: 1px solid #e3e6ea; border-bottom-left-radius: .25rem; }
-    .msg-sys  { background: #fff3cd; border: 1px solid #ffecb5; font-size: .9rem; }
-    .typing span { animation: blink 1.2s infinite; }
-    .typing span:nth-child(2){ animation-delay:.2s } .typing span:nth-child(3){ animation-delay:.4s }
-    @keyframes blink { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NUTRICHEF — Núcleo de IA</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<style>
+:root{
+  --bg0:#02060d; --bg1:#061224; --cyan:#27e5ff; --cyan2:#0af; --teal:#0fe0b0;
+  --ink:#d7ecf5; --dim:#5f8296; --glass:rgba(13,38,58,.42); --glass-b:rgba(120,220,255,.16);
+  --sh1:#010409; --sh2:#0d2a3f; --danger:#ff5c7a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(ellipse at 50% -10%, var(--bg1) 0%, var(--bg0) 60%) fixed, var(--bg0);
+  color:var(--ink); font-family:"Segoe UI",system-ui,sans-serif;
+  overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:
+    linear-gradient(transparent 95%, rgba(39,229,255,.04) 100%) 0 0/100% 44px,
+    linear-gradient(90deg, transparent 95%, rgba(39,229,255,.04) 100%) 0 0/44px 100%;
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:2;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 3px);
+  mix-blend-mode:overlay;
+}
+.hud{
+  position:fixed; width:120px; height:26px; z-index:3; opacity:.55;
+  border:1px solid var(--glass-b); font-size:.6rem; letter-spacing:.28em;
+  color:var(--dim); display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(2px);
+}
+.hud.tl{top:14px;left:16px;border-right:none}
+.hud.tr{top:14px;right:16px;border-left:none}
+.hud.bl{bottom:14px;left:16px;border-right:none}
+.hud.br{bottom:14px;right:16px;border-left:none}
+.wrap{position:relative;z-index:4;max-width:1060px;margin:0 auto;padding:26px 18px 40px}
+
+.glitch{
+  position:relative; font-size:clamp(1.6rem,4.5vw,2.6rem); font-weight:800;
+  letter-spacing:.35em; color:var(--ink); text-transform:uppercase;
+  text-shadow:0 0 18px rgba(39,229,255,.45);
+}
+.glitch::before,.glitch::after{
+  content:attr(data-text); position:absolute; inset:0;
+  text-shadow:none; overflow:hidden;
+}
+.glitch::before{
+  color:var(--cyan); transform:translate(-2px,0);
+  clip-path:inset(12% 0 58% 0); animation:gl1 2.6s infinite linear alternate-reverse;
+}
+.glitch::after{
+  color:var(--danger); transform:translate(2px,0);
+  clip-path:inset(60% 0 8% 0); animation:gl2 3.1s infinite linear alternate-reverse;
+}
+@keyframes gl1{
+  0%,86%{clip-path:inset(12% 0 58% 0);transform:translate(-2px,0)}
+  88%{clip-path:inset(40% 0 32% 0);transform:translate(-7px,-2px)}
+  92%{clip-path:inset(70% 0 6% 0);transform:translate(4px,1px)}
+  96%{clip-path:inset(8% 0 76% 0);transform:translate(-3px,0)}
+  100%{clip-path:inset(12% 0 58% 0);transform:translate(-2px,0)}
+}
+@keyframes gl2{
+  0%,84%{clip-path:inset(60% 0 8% 0);transform:translate(2px,0)}
+  87%{clip-path:inset(22% 0 62% 0);transform:translate(6px,2px)}
+  91%{clip-path:inset(48% 0 30% 0);transform:translate(-5px,-1px)}
+  95%{clip-path:inset(80% 0 2% 0);transform:translate(3px,0)}
+  100%{clip-path:inset(60% 0 8% 0);transform:translate(2px,0)}
+}
+.sub{color:var(--dim);letter-spacing:.42em;font-size:.68rem;text-transform:uppercase;margin-top:6px}
+
+.core-zone{display:flex;justify-content:center;padding:34px 0 8px}
+.core{
+  position:relative; width:300px; height:300px; flex:none;
+  filter:drop-shadow(0 0 26px rgba(39,229,255,.28));
+  transition:filter .5s;
+}
+.core.thinking{filter:drop-shadow(0 0 46px rgba(39,229,255,.65))}
+.ring{position:absolute;border-radius:50%;inset:0}
+.r1{
+  inset:0;border:1px solid rgba(39,229,255,.35);
+  border-top-color:var(--cyan);border-bottom-color:var(--cyan);
+  animation:spin 14s linear infinite;
+}
+.r2{
+  inset:14px;border:2px dashed rgba(39,229,255,.3);
+  animation:spin 22s linear infinite reverse;
+}
+.r3{
+  inset:32px;border:1px solid transparent;
+  border-top-color:rgba(15,224,176,.85);border-right-color:rgba(15,224,176,.85);
+  animation:spin 9s linear infinite;
+}
+.r4{
+  inset:52px;border:1px dotted rgba(120,220,255,.45);
+  animation:spin 30s linear infinite reverse;
+}
+.r5{
+  inset:68px;
+  background:
+    conic-gradient(from 0deg, transparent 0 24deg, rgba(39,229,255,.5) 24deg 30deg,
+      transparent 30deg 96deg, rgba(39,229,255,.5) 96deg 102deg,
+      transparent 102deg 168deg, rgba(39,229,255,.5) 168deg 174deg,
+      transparent 174deg 240deg, rgba(39,229,255,.5) 240deg 246deg,
+      transparent 246deg 312deg, rgba(39,229,255,.5) 312deg 318deg, transparent 318deg);
+  -webkit-mask:radial-gradient(closest-side, transparent 72%, #000 73%);
+  mask:radial-gradient(closest-side, transparent 72%, #000 73%);
+  animation:spin 6s linear infinite;
+}
+.orb{
+  position:absolute; inset:96px; border-radius:50%;
+  background:radial-gradient(circle at 38% 34%, #bdf7ff 0%, var(--cyan) 26%,
+    #0b7aa8 62%, #03324a 100%);
+  box-shadow:0 0 34px 6px rgba(39,229,255,.5), inset 0 -10px 26px rgba(0,10,20,.7);
+  animation:pulse 3.4s ease-in-out infinite;
+}
+.core.thinking .r1{animation-duration:3.5s}
+.core.thinking .r2{animation-duration:6s}
+.core.thinking .r3{animation-duration:2.2s}
+.core.thinking .r5{animation-duration:1.4s}
+.core.thinking .orb{animation-duration:1s;box-shadow:0 0 54px 12px rgba(39,229,255,.75), inset 0 -10px 26px rgba(0,10,20,.7)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(.96)}50%{transform:scale(1.05)}}
+.eq{
+  position:absolute;inset:0;display:flex;gap:3px;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .4s;
+}
+.core.thinking .eq{opacity:1}
+.eq i{
+  width:3px;height:10px;background:var(--ink);border-radius:2px;
+  animation:eq .9s ease-in-out infinite;
+}
+.eq i:nth-child(2){animation-delay:.12s}.eq i:nth-child(3){animation-delay:.24s}
+.eq i:nth-child(4){animation-delay:.36s}.eq i:nth-child(5){animation-delay:.48s}
+@keyframes eq{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(2.4)}}
+.core-status{
+  position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);
+  font-size:.6rem;letter-spacing:.4em;color:var(--dim);text-transform:uppercase;
+  white-space:nowrap;transition:color .4s;
+}
+.core.thinking ~ .core-status, .core-status.on{color:var(--cyan)}
+
+.glass{
+  background:var(--glass); border:1px solid var(--glass-b);
+  backdrop-filter:blur(16px) saturate(140%); -webkit-backdrop-filter:blur(16px) saturate(140%);
+  border-radius:18px;
+  box-shadow:0 22px 50px -18px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.07);
+}
+.neu{
+  background:linear-gradient(145deg,#0a1f31,#071728);
+  border-radius:12px;
+  box-shadow:6px 6px 14px var(--sh1), -3px -3px 10px var(--sh2),
+    inset 0 0 0 1px rgba(120,220,255,.06);
+  transition:box-shadow .2s, transform .15s;
+}
+.neu:active, .neu.pressed{
+  box-shadow:inset 5px 5px 12px var(--sh1), inset -3px -3px 8px var(--sh2);
+  transform:translateY(1px);
+}
+.btnx{
+  border:none; cursor:pointer; color:var(--cyan);
+  font-family:inherit; font-size:.72rem; font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase; padding:.72rem 1.15rem;
+}
+.btnx:hover{color:#aef4ff}
+.btnx:disabled{opacity:.45;cursor:wait}
+.btnx.danger{color:var(--danger)}
+.btnx.primary{
+  color:#03202e;background:linear-gradient(145deg,var(--cyan),#0aa8d8);
+  text-shadow:none;box-shadow:0 0 18px rgba(39,229,255,.35), 6px 6px 14px var(--sh1);
+}
+.chat-panel{display:flex;flex-direction:column;height:56vh;overflow:hidden}
+.panel-head{
+  display:flex;align-items:center;gap:10px;padding:14px 18px;
+  border-bottom:1px solid var(--glass-b);font-size:.7rem;letter-spacing:.3em;
+  text-transform:uppercase;color:var(--dim);
+}
+.panel-head .dot{width:8px;height:8px;border-radius:50%;background:var(--teal);
+  box-shadow:0 0 10px var(--teal);animation:pulse 2s infinite}
+#chatBox{flex:1;overflow-y:auto;padding:20px;scrollbar-width:thin;scrollbar-color:var(--cyan2) transparent}
+#chatBox::-webkit-scrollbar{width:6px}
+#chatBox::-webkit-scrollbar-thumb{background:rgba(39,229,255,.35);border-radius:3px}
+.msg{
+  max-width:82%;padding:.8rem 1.05rem;margin-bottom:14px;font-size:.93rem;
+  line-height:1.55;white-space:pre-wrap;position:relative;
+  animation:msgIn .35s cubic-bezier(.2,.9,.3,1.2) both;
+}
+@keyframes msgIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.msg-bot{
+  margin-right:auto;border-radius:4px 16px 16px 16px;
+  background:rgba(16,46,70,.55);border:1px solid var(--glass-b);
+  box-shadow:0 10px 24px -10px rgba(0,0,0,.7);
+}
+.msg-user{
+  margin-left:auto;border-radius:16px 16px 4px 16px;color:#04121c;
+  background:linear-gradient(135deg,#3fe8ff,#0a9fd0);
+  box-shadow:0 0 22px rgba(39,229,255,.3);
+}
+.msg-sys{
+  margin:0 auto;max-width:94%;text-align:center;font-size:.8rem;color:#ffd7de;
+  border-radius:10px;background:rgba(90,20,40,.35);border:1px solid rgba(255,92,122,.3);
+}
+.tag{display:block;font-size:.58rem;letter-spacing:.3em;color:var(--dim);margin-bottom:4px;text-transform:uppercase}
+.typing span{animation:blink 1.1s infinite;color:var(--cyan)}
+.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,60%,100%{opacity:.2}30%{opacity:1}}
+.panel-foot{padding:14px 18px;border-top:1px solid var(--glass-b)}
+.inputx{
+  flex:1;background:#050f1c;border:1px solid var(--glass-b);border-radius:12px;
+  color:var(--ink);padding:.85rem 1.1rem;font-family:inherit;font-size:.95rem;
+  box-shadow:inset 5px 5px 12px var(--sh1), inset -3px -3px 8px var(--sh2);
+  transition:border-color .25s, box-shadow .25s;
+}
+.inputx:focus{outline:none;border-color:var(--cyan);box-shadow:inset 5px 5px 12px var(--sh1),0 0 14px rgba(39,229,255,.25)}
+.inputx::placeholder{color:var(--dim)}
+.alerta{
+  display:none;margin-bottom:16px;padding:.8rem 1.1rem;border-radius:12px;
+  background:rgba(120,30,50,.3);border:1px solid rgba(255,92,122,.4);
+  font-size:.85rem;color:#ffd7de;
+}
+.badge-modelo{
+  font-size:.62rem;letter-spacing:.24em;color:var(--teal);
+  border:1px solid rgba(15,224,176,.4);border-radius:20px;padding:.35rem .9rem;
+  text-transform:uppercase;
+}
+.modalx{
+  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(2,6,13,.75);backdrop-filter:blur(6px);z-index:50;
+}
+.modalx.show{display:flex}
+.modal-card{width:min(560px,92vw);padding:0;overflow:hidden;animation:msgIn .3s both}
+.modal-body{padding:22px;white-space:pre-wrap;font-size:.92rem;line-height:1.6;
+  max-height:60vh;overflow-y:auto}
+.topbar{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.blink-cursor{display:inline-block;width:8px;height:14px;background:var(--cyan);
+  animation:blink 1s infinite;vertical-align:-2px;margin-left:4px}
+@media(max-width:640px){.core{width:230px;height:230px}.core-status{font-size:.5rem}}
+</style>
 </head>
 <body>
-<nav class="navbar navbar-dark bg-success shadow-sm">
-  <div class="container">
-    <span class="navbar-brand"><i class="bi bi-egg-fried me-2"></i>NutriChef <small class="fw-light">tutor de cocina saludable</small></span>
-    <span class="badge text-bg-light" id="badgeModelo"><i class="bi bi-cpu"></i> {{ modelo }}</span>
+<div class="hud tl">SYS·ON</div>
+<div class="hud tr">CORE·{{ modelo }}</div>
+<div class="hud bl">PROT·02</div>
+<div class="hud br">OLLAMA·LINK</div>
+
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <div class="glitch" data-text="NUTRICHEF">NUTRICHEF</div>
+      <div class="sub">// núcleo de asistencia culinaria · LLM local</div>
+    </div>
+    <div style="margin-left:auto" class="badge-modelo" id="badgeModelo">
+      <i class="bi bi-cpu"></i> {{ modelo }}
+    </div>
   </div>
-</nav>
 
-<div class="container py-4">
-  <div class="row justify-content-center">
-    <div class="col-lg-8">
+  <div class="core-zone">
+    <div class="core" id="nucleo">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="ring r3"></div>
+      <div class="ring r4"></div>
+      <div class="ring r5"></div>
+      <div class="orb"></div>
+      <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="core-status" id="coreStatus">núcleo en espera</div>
+  </div>
 
-      <div id="alertaOllama" class="alert alert-warning d-none">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        No se detecta Ollama. Inicia el servicio (<code>ollama serve</code>) y recarga la página.
+  <div class="alerta" id="alertaOllama">
+    <i class="bi bi-exclamation-triangle"></i>
+    Enlace con Ollama no detectado. Inicia el servicio (<code>ollama serve</code>) y recarga.
+  </div>
+
+  <div class="glass chat-panel">
+    <div class="panel-head">
+      <span class="dot"></span> canal de diálogo
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button class="btnx neu" id="btnResumen"><i class="bi bi-card-list"></i> Resumen</button>
+        <button class="btnx neu danger" id="btnReiniciar"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+      </span>
+    </div>
+    <div id="chatBox">
+      <div class="msg msg-sys">
+        Núcleo en línea. Soy <b>NutriChef</b>: pregunta por recetas saludables,
+        sustitutos de ingredientes o ideas de menú.
+        Ej.: <i>"¿Qué puedo cenar rápido y con proteína?"</i>
       </div>
-
-      <div class="card shadow-sm chat-card d-flex flex-column">
-        <div class="card-header d-flex gap-2 align-items-center bg-white">
-          <strong class="me-auto"><i class="bi bi-chat-dots me-1"></i>Conversación</strong>
-          <button class="btn btn-outline-secondary btn-sm" id="btnResumen">
-            <i class="bi bi-card-list me-1"></i>Resumen del historial
-          </button>
-          <button class="btn btn-outline-danger btn-sm" id="btnReiniciar">
-            <i class="bi bi-arrow-counterclockwise me-1"></i>Reiniciar
-          </button>
-        </div>
-
-        <div class="card-body" id="chatBox">
-          <div class="d-flex mb-2">
-            <div class="msg msg-sys">
-              <i class="bi bi-info-circle me-1"></i>
-              Hola, soy <b>NutriChef</b>. Pregúntame por recetas saludables, sustitutos
-              de ingredientes o ideas de menú. Ej.: <i>"¿Qué puedo cenar rápido y con proteína?"</i>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-footer bg-white">
-          <form id="formChat" class="input-group">
-            <input type="text" id="txtMsg" class="form-control" maxlength="4000"
-                   placeholder="Escribe tu pregunta de cocina…" autocomplete="off" required>
-            <button class="btn btn-success" type="submit" id="btnEnviar">
-              <i class="bi bi-send"></i> Enviar
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <p class="text-muted small mt-2 mb-0">
-        <i class="bi bi-shield-check me-1"></i>
-        El resumen lo genera el propio modelo a partir del historial de esta sesión.
-      </p>
+    </div>
+    <div class="panel-foot" style="display:flex;gap:10px">
+      <input class="inputx" id="txtMsg" maxlength="4000" autocomplete="off" required
+             placeholder="Transmite tu consulta al núcleo…">
+      <button class="btnx neu primary" id="btnEnviar"><i class="bi bi-send"></i> Enviar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal resumen -->
-<div class="modal fade" id="modalResumen" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-card-list me-1"></i>Resumen de tu historial</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body" id="cuerpoResumen" style="white-space:pre-wrap"></div>
+<div class="modalx" id="modalResumen">
+  <div class="glass modal-card">
+    <div class="panel-head">
+      <i class="bi bi-card-list"></i> síntesis del historial
+      <button class="btnx neu" style="margin-left:auto" id="btnCerrarModal"><i class="bi bi-x-lg"></i></button>
     </div>
+    <div class="modal-body" id="cuerpoResumen"></div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const chatBox = document.getElementById('chatBox');
-const form = document.getElementById('formChat');
 const txt = document.getElementById('txtMsg');
-const modalResumen = new bootstrap.Modal('#modalResumen');
+const nucleo = document.getElementById('nucleo');
+const coreStatus = document.getElementById('coreStatus');
+const modal = document.getElementById('modalResumen');
+const btnEnviar = document.getElementById('btnEnviar');
 
-function burbuja(texto, tipo) {
-  const fila = document.createElement('div');
-  fila.className = 'd-flex mb-2';
+function pensando(on, texto) {
+  nucleo.classList.toggle('thinking', on);
+  coreStatus.textContent = on ? 'procesando' : (texto || 'núcleo en espera');
+}
+
+function burbuja(texto, tipo, tag) {
   const div = document.createElement('div');
   div.className = 'msg ' + tipo;
-  div.textContent = texto;
-  fila.appendChild(div);
-  chatBox.appendChild(fila);
+  if (tag) {
+    const t = document.createElement('span');
+    t.className = 'tag'; t.textContent = tag; div.appendChild(t);
+  }
+  div.appendChild(document.createTextNode(texto));
+  chatBox.appendChild(div);
   chatBox.scrollTop = chatBox.scrollHeight;
   return div;
 }
 
-function indicadorEscritura() {
-  const d = burbuja('', 'msg-bot typing');
-  d.innerHTML = '<span>●</span><span>●</span><span>●</span>';
-  return d.parentElement;
+function indicador() {
+  const d = burbuja('', 'msg-bot');
+  d.innerHTML = '<span class="tag">núcleo</span><span class="typing"><span>●</span><span>●</span><span>●</span></span>';
+  return d;
 }
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
+async function enviar() {
   const mensaje = txt.value.trim();
   if (!mensaje) return;
   txt.value = '';
-  burbuja(mensaje, 'msg-user');
-  const typing = indicadorEscritura();
-  document.getElementById('btnEnviar').disabled = true;
+  burbuja(mensaje, 'msg-user', 'tú');
+  const t = indicador();
+  btnEnviar.disabled = true;
+  pensando(true);
   try {
     const r = await fetch('/api/chat', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({mensaje})
     });
     const data = await r.json();
-    typing.remove();
+    t.remove();
     if (data.error) burbuja('⚠ ' + data.error, 'msg-sys');
-    else burbuja(data.respuesta, 'msg-bot');
-  } catch (err) {
-    typing.remove();
-    burbuja('⚠ Error de red al contactar el servidor.', 'msg-sys');
+    else burbuja(data.respuesta, 'msg-bot', 'núcleo');
+  } catch {
+    t.remove();
+    burbuja('⚠ Enlace interrumpido con el servidor.', 'msg-sys');
   } finally {
-    document.getElementById('btnEnviar').disabled = false;
+    btnEnviar.disabled = false;
+    pensando(false, 'núcleo en espera');
     txt.focus();
   }
-});
+}
+
+btnEnviar.addEventListener('click', enviar);
+txt.addEventListener('keydown', e => { if (e.key === 'Enter') enviar(); });
 
 document.getElementById('btnResumen').addEventListener('click', async () => {
-  document.getElementById('cuerpoResumen').textContent = 'Generando resumen…';
-  modalResumen.show();
+  document.getElementById('cuerpoResumen').textContent = 'Sintetizando historial…';
+  modal.classList.add('show');
+  pensando(true);
   try {
-    const r = await fetch('/api/resumen', {method:'POST'});
+    const r = await fetch('/api/resumen', {method: 'POST'});
     const data = await r.json();
-    document.getElementById('cuerpoResumen').textContent = data.resumen || data.error || 'Sin respuesta.';
+    document.getElementById('cuerpoResumen').textContent =
+      data.resumen || data.error || 'Sin respuesta.';
   } catch {
-    document.getElementById('cuerpoResumen').textContent = 'Error al solicitar el resumen.';
+    document.getElementById('cuerpoResumen').textContent = 'Enlace fallido al resumir.';
+  } finally {
+    pensando(false);
   }
 });
+document.getElementById('btnCerrarModal').addEventListener('click', () => modal.classList.remove('show'));
+modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('show'); });
 
 document.getElementById('btnReiniciar').addEventListener('click', async () => {
-  await fetch('/api/reiniciar', {method:'POST'});
+  await fetch('/api/reiniciar', {method: 'POST'});
   location.reload();
 });
 
-// Estado de Ollama al cargar
-fetch('/api/estado').then(r=>r.json()).then(d=>{
-  if (!d.ollama) document.getElementById('alertaOllama').classList.remove('d-none');
-  else document.getElementById('badgeModelo').innerHTML = '<i class="bi bi-cpu"></i> ' + d.modelo;
-}).catch(()=>{});
+fetch('/api/estado').then(r => r.json()).then(d => {
+  if (!d.ollama) {
+    document.getElementById('alertaOllama').style.display = 'block';
+    coreStatus.textContent = 'enlace ollama: offline';
+  } else {
+    document.getElementById('badgeModelo').innerHTML = '<i class="bi bi-cpu"></i> ' + d.modelo;
+  }
+}).catch(() => {});
+
+txt.focus();
 </script>
 </body>
 </html>
