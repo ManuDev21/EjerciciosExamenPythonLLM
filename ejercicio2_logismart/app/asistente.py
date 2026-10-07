@@ -1,60 +1,63 @@
-# -*- coding: utf-8 -*-
-"""Asistente explicativo con patrón RAG sencillo.
-
-    pregunta -> recuperar de MongoDB -> construir contexto -> LLM responde
-    SOLO con lo recuperado, citando los registros de origen. Si no hay
-    datos, responde "No tengo información" (sin inventar). Si el LLM no
-    está disponible, responde con una plantilla determinista.
-"""
+import json
 import re
 
 from . import llm
 from .db import ahora_iso
 
-MAX_DOCS_CONTEXTO = 8
+MAX_DOCS_CONTEXTO = 12
+
+
+def _ref_incidente(d):
+    return {"coleccion": "incidentes", "id": str(d.get("_id")),
+            "resumen": f"{d.get('clasificacion',{}).get('categoria')} "
+                       f"({d.get('clasificacion',{}).get('prioridad')}) "
+                       f"estado {d.get('estado')} - {d.get('asunto','')[:60]}",
+            "doc": d}
+
+
+def _ref_acceso(d):
+    return {"coleccion": "accesos", "id": str(d.get("_id")),
+            "resumen": f"{d.get('camion_id') or d.get('placa')} -> "
+                       f"{d.get('decision')} ({d.get('timestamp','')[:16]})",
+            "doc": d}
+
+
+def _ref_camion(d):
+    return {"coleccion": "camiones", "id": str(d.get("_id")),
+            "resumen": f"{d.get('camion_id')} {d.get('placa')} {d.get('empresa')}",
+            "doc": d}
 
 
 def _buscar_referencias(pregunta: str, store) -> list:
-    """Recupera los documentos relevantes de MongoDB para la pregunta.
-
-    Devuelve lista de {"coleccion", "id", "resumen", "doc"}.
-    """
     hallados = []
     texto = pregunta.upper()
+    q = pregunta.lower()
 
-    ids_camion = set(re.findall(r"\bCAM-?\s?(\d+)\b", texto))
-    ids_camion = {f"CAM-{n}" for n in ids_camion}
+    ids_camion = {f"CAM-{n}" for n in re.findall(r"\bCAM-?\s?(\d+)\b", texto)}
     placas = set(re.findall(r"\b[A-Z0-9]{2,3}-\d{2,3}-[A-Z0-9]{1,2}\b", texto))
 
-    # --- búsqueda por camión / placa ----------------------------------------
     if ids_camion or placas:
         camiones = store.col("camiones").buscar()
         objetivos = [c for c in camiones
                      if c.get("camion_id") in ids_camion or c.get("placa") in placas]
         for cam in objetivos:
             cid = cam.get("camion_id")
-            hallados.append({"coleccion": "camiones", "id": str(cam.get("_id")),
-                             "resumen": f"{cid} placa {cam.get('placa')} empresa {cam.get('empresa')}",
-                             "doc": cam})
+            hallados.append(_ref_camion(cam))
             accesos_camion = (store.col("accesos").buscar({"camion_id": cid},
                               orden=[("timestamp", -1)], limite=3) +
                               store.col("accesos").buscar({"placa": cam.get("placa")},
                               orden=[("timestamp", -1)], limite=3))
             for acc in accesos_camion[:3]:
-                hallados.append({"coleccion": "accesos", "id": str(acc.get("_id")),
-                                 "resumen": f"acceso {acc.get('timestamp','?')[:16]}: {acc.get('decision')}",
-                                 "doc": acc})
+                hallados.append(_ref_acceso(acc))
             for inc in store.col("incidentes").buscar(limite=400):
                 datos = inc.get("datos_extraidos", {}) or {}
                 if datos.get("camion_id") == cid or datos.get("placa") == cam.get("placa"):
-                    hallados.append({"coleccion": "incidentes", "id": str(inc.get("_id")),
+                    hallados.append({**_ref_incidente(inc),
                                      "resumen": f"incidente {inc.get('clasificacion',{}).get('categoria')} "
-                                                f"estado {inc.get('estado')}",
-                                     "doc": inc})
+                                                f"estado {inc.get('estado')}"})
 
-    # --- intenciones generales ------------------------------------------------
-    if re.search(r"incidente|correo|reporte", pregunta, re.IGNORECASE):
-        if re.search(r"abierto|pendiente|nuevo|en_atencion|en atencion", pregunta, re.IGNORECASE):
+    if re.search(r"incidente|correo|reporte|falla|alerta|derrame|fuga|accidente|problema|revisi[oó]n", q):
+        if re.search(r"abierto|pendiente|nuevo|en_atencion|en atencion|urgente|crit", q):
             docs = store.col("incidentes").buscar(
                 {"estado": {"$in": ["nuevo", "en_atencion"]}},
                 orden=[("timestamp", -1)], limite=MAX_DOCS_CONTEXTO)
@@ -62,26 +65,18 @@ def _buscar_referencias(pregunta: str, store) -> list:
             docs = store.col("incidentes").buscar(
                 orden=[("timestamp", -1)], limite=MAX_DOCS_CONTEXTO)
         for d in docs:
-            hallados.append({"coleccion": "incidentes", "id": str(d.get("_id")),
-                             "resumen": f"{d.get('clasificacion',{}).get('categoria')} "
-                                        f"({d.get('clasificacion',{}).get('prioridad')}) "
-                                        f"estado {d.get('estado')} - {d.get('asunto','')[:60]}",
-                             "doc": d})
+            hallados.append(_ref_incidente(d))
 
-    if re.search(r"acceso|camion|camiones|entr[oó]|ingres", pregunta, re.IGNORECASE) and not ids_camion:
-        for d in store.col("accesos").buscar(orden=[("timestamp", -1)], limite=5):
-            hallados.append({"coleccion": "accesos", "id": str(d.get("_id")),
-                             "resumen": f"{d.get('camion_id') or d.get('placa')} -> "
-                                        f"{d.get('decision')} ({d.get('timestamp','')[:16]})",
-                             "doc": d})
-        for d in store.col("camiones").buscar(limite=20):
-            if re.search(r"cu[aá]ntos|lista|todos", pregunta, re.IGNORECASE):
-                hallados.append({"coleccion": "camiones", "id": str(d.get("_id")),
-                                 "resumen": f"{d.get('camion_id')} {d.get('placa')} {d.get('empresa')}",
-                                 "doc": d})
-                break  # basta el conteo
+    if not ids_camion:
+        if re.search(r"acceso|entr[oó]|ingres|salid|inspecci[oó]n|denegad|retenid|decisi[oó]n|sem[aá]foro", q):
+            for d in store.col("accesos").buscar(orden=[("timestamp", -1)], limite=5):
+                hallados.append(_ref_acceso(d))
 
-    if re.search(r"riesgo|[ée]tic", pregunta, re.IGNORECASE):
+        if re.search(r"camion|camiones|placa|tractor|unidad|veh[ií]culo|empresa|flota|registrad", q):
+            for d in store.col("camiones").buscar(limite=20):
+                hallados.append(_ref_camion(d))
+
+    if re.search(r"riesgo|[ée]tic|matriz|privacidad|sesgo|transparencia", q):
         docs = store.col("riesgos_eticos").buscar()
         docs.sort(key=lambda d: d.get("probabilidad", 1) * d.get("impacto", 1), reverse=True)
         for d in docs[:MAX_DOCS_CONTEXTO]:
@@ -90,7 +85,14 @@ def _buscar_referencias(pregunta: str, store) -> list:
                                         f"P{d.get('probabilidad')}xI{d.get('impacto')}",
                              "doc": d})
 
-    # deduplicar por (coleccion, id)
+    if not hallados and re.search(r"cu[aá]nt|total|hay|estado|resumen|hoy|[úu]ltim|recient|qu[eé]|estad[ií]stic", q):
+        for d in store.col("incidentes").buscar(orden=[("timestamp", -1)], limite=4):
+            hallados.append(_ref_incidente(d))
+        for d in store.col("accesos").buscar(orden=[("timestamp", -1)], limite=4):
+            hallados.append(_ref_acceso(d))
+        for d in store.col("camiones").buscar(limite=20):
+            hallados.append(_ref_camion(d))
+
     vistos, unicos = set(), []
     for h in hallados:
         clave = (h["coleccion"], h["id"])
@@ -99,9 +101,7 @@ def _buscar_referencias(pregunta: str, store) -> list:
             unicos.append(h)
     return unicos[:MAX_DOCS_CONTEXTO]
 
-
 def _contexto(hallados: list) -> str:
-    """Serializa los documentos recuperados como contexto para el LLM."""
     lineas = []
     for h in hallados:
         d = h["doc"]
@@ -132,22 +132,25 @@ def _contexto(hallados: list) -> str:
         lineas.append(" ".join(partes))
     return "\n".join(lineas)
 
-
 PROMPT_ASISTENTE = """Eres el asistente del centro de control LogiSmart.
 Responde la pregunta del operador usando EXCLUSIVAMENTE la información del
 CONTEXTO (registros reales de la base de datos).
 
 Reglas estrictas:
 1. Cita siempre el registro de origen con su etiqueta, p. ej. [accesos#abc123].
-2. Si el contexto NO contiene la respuesta, di exactamente:
-   "No tengo información registrada sobre eso." No inventes datos.
-3. Responde en español, claro y breve (máximo 3 párrafos cortos o viñetas).
-4. Cuando expliques una decisión de acceso, menciona las premisas (P,Q,R,S,T,V)
+2. Interpreta preguntas breves o ambiguas ("dame placas", "qué camiones hay",
+   "incidentes", "cuántos") como solicitud de LISTAR o resumir los registros
+   del contexto relacionados con lo pedido. Los registros [camiones#...]
+   incluyen camion_id y placa: si piden placas o IDs, preséntalos como pares
+   camion_id -> placa.
+3. Solo si el contexto NO contiene nada relacionado con la pregunta, di
+   exactamente: "No tengo información registrada sobre eso." No inventes datos.
+4. Responde en español, claro y breve (máximo 3 párrafos cortos o viñetas).
+5. Cuando expliques una decisión de acceso, menciona las premisas (P,Q,R,S,T,V)
    que la causaron según el razonamiento registrado.
 """
 
-
-def responder(pregunta: str, store, modelo: str, sid: str = "") -> dict:
+def responder_stream(pregunta: str, store, modelo: str, sid: str = ""):
     hallados = _buscar_referencias(pregunta, store)
     fuentes = [{"coleccion": h["coleccion"], "id": h["id"], "resumen": h["resumen"]}
                for h in hallados]
@@ -157,24 +160,43 @@ def responder(pregunta: str, store, modelo: str, sid: str = "") -> dict:
                      "Puedo consultar camiones por placa o ID (CAM-###), "
                      "accesos recientes, incidentes y la matriz de riesgos.")
         modo = "sin_datos"
+        yield json.dumps({"chunk": respuesta}, ensure_ascii=False) + "\n"
     else:
         contexto = _contexto(hallados)
-        res = llm.chat(modelo, [
-            {"role": "system", "content": PROMPT_ASISTENTE},
-            {"role": "user", "content": f"CONTEXTO:\n{contexto}\n\nPREGUNTA: {pregunta}"},
-        ])
-        if res["ok"]:
-            respuesta = res["contenido"]
+        try:
+            respuesta = ""
+            for trozo in llm.chat_stream(modelo, [
+                {"role": "system", "content": PROMPT_ASISTENTE},
+                {"role": "user", "content": f"CONTEXTO:\n{contexto}\n\nPREGUNTA: {pregunta}"},
+            ]):
+                respuesta += trozo
+                yield json.dumps({"chunk": trozo}, ensure_ascii=False) + "\n"
             modo = "llm"
-        else:
-            # Respaldo determinista cuando Ollama no está disponible
-            respuesta = ("(LLM no disponible; respuesta generada solo con datos "
-                         "recuperados)\n\n" +
-                         "\n".join(f"- {h['resumen']}  [{h['coleccion']}#{h['id']}]"
-                                   for h in hallados))
-            modo = "reglas"
+        except Exception:
+            if respuesta:
+                modo = "llm"
+            else:
+                respuesta = ("(LLM no disponible; respuesta generada solo con datos "
+                             "recuperados)\n\n" +
+                             "\n".join(f"- {h['resumen']}  [{h['coleccion']}#{h['id']}]"
+                                       for h in hallados))
+                modo = "reglas"
+                yield json.dumps({"chunk": respuesta}, ensure_ascii=False) + "\n"
 
     store.col("conversaciones").insertar(
         {"sid": sid, "pregunta": pregunta, "respuesta": respuesta,
          "fuentes": fuentes, "modo": modo, "timestamp": ahora_iso()})
-    return {"respuesta": respuesta, "fuentes": fuentes, "modo": modo}
+    yield json.dumps({"done": True, "fuentes": fuentes, "modo": modo},
+                     ensure_ascii=False) + "\n"
+
+def responder(pregunta: str, store, modelo: str, sid: str = "") -> dict:
+    texto, meta = "", {}
+    for linea in responder_stream(pregunta, store, modelo, sid):
+        d = json.loads(linea)
+        if "chunk" in d:
+            texto += d["chunk"]
+        else:
+            meta = d
+    return {"respuesta": texto,
+            "fuentes": meta.get("fuentes", []),
+            "modo": meta.get("modo", "")}

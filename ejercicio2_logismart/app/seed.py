@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Datos de demostración: camiones, accesos históricos, incidentes de
-muestra y la matriz de riesgos éticos inicial. Idempotente: solo siembra
-cuando la colección está vacía (o con forzar=True)."""
 import random
 from datetime import datetime, timedelta, timezone
 
@@ -73,16 +69,12 @@ RIESGOS_DEMO = [
      "probabilidad_residual": 1, "impacto_residual": 3},
 ]
 
-
 def _hace(dias: int, horas: int = 0) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=dias, hours=horas)).isoformat(timespec="seconds")
 
-
 def sembrar(store, correos: list = None, forzar: bool = False) -> dict:
-    """Inserta datos de demostración. Devuelve conteos por colección."""
     resumen = {}
 
-    # --- camiones ------------------------------------------------------------
     col = store.col("camiones")
     if forzar:
         col.vaciar()
@@ -91,7 +83,6 @@ def sembrar(store, correos: list = None, forzar: bool = False) -> dict:
             col.insertar(c)
         resumen["camiones"] = len(CAMIONES_DEMO)
 
-    # --- accesos históricos (últimos 21 días) ---------------------------------
     col = store.col("accesos")
     if forzar:
         col.vaciar()
@@ -116,7 +107,6 @@ def sembrar(store, correos: list = None, forzar: bool = False) -> dict:
                 n += 1
         resumen["accesos"] = n
 
-    # --- incidentes de muestra (derivados del dataset etiquetado) -------------
     col = store.col("incidentes")
     if forzar:
         col.vaciar()
@@ -139,7 +129,6 @@ def sembrar(store, correos: list = None, forzar: bool = False) -> dict:
             n += 1
         resumen["incidentes"] = n
 
-    # --- riesgos éticos ---------------------------------------------------------
     col = store.col("riesgos_eticos")
     if forzar:
         col.vaciar()
@@ -148,6 +137,5 @@ def sembrar(store, correos: list = None, forzar: bool = False) -> dict:
             col.insertar({**r, "historico": [{"ts": ahora_iso(), "evento": "alta (seed)"}]})
         resumen["riesgos_eticos"] = len(RIESGOS_DEMO)
 
-    # --- marca de semilla --------------------------------------------------------
     store.col("meta").insertar({"_tipo": "seed", "ts": ahora_iso(), "resumen": resumen})
     return resumen

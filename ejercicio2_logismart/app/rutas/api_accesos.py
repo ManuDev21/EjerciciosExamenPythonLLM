@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-"""API de control de acceso: camiones (CRUD), evaluación de reglas y
-bitácora de accesos; incluye las tablas de verdad del simulador y el
-análisis de redundancia/contradicciones."""
 from flask import Blueprint, jsonify, request
 from pydantic import ValidationError
 
@@ -12,8 +8,6 @@ from ..reglas import analisis_reglas, evaluar_camion, tablas_para_ui
 
 api_accesos = Blueprint("api_accesos", __name__, url_prefix="/api")
 
-
-# ------------------------------------------------------------ camiones CRUD
 @api_accesos.route("/camiones", methods=["GET", "POST"])
 def camiones():
     store = get_store()
@@ -37,7 +31,6 @@ def camiones():
     nuevo_id = store.col("camiones").insertar(doc)
     return jsonify(store.col("camiones").buscar_por_id(nuevo_id)), 201
 
-
 @api_accesos.route("/camiones/<doc_id>", methods=["GET", "PUT", "DELETE"])
 def camion_detalle(doc_id):
     store = get_store()
@@ -60,12 +53,8 @@ def camion_detalle(doc_id):
     ok = col.actualizar(doc_id, campos)
     return jsonify(col.buscar_por_id(doc_id)) if ok else (jsonify({"error": "no encontrado"}), 404)
 
-
-# -------------------------------------------------- evaluación de acceso
 @api_accesos.post("/accesos/evaluar")
 def evaluar_acceso():
-    """Evalúa las reglas y (opcionalmente) guarda la decisión en `accesos`
-    junto con la explicación paso a paso."""
     store = get_store()
     try:
         datos = AccesoEvaluarIn.model_validate(request.get_json(force=True, silent=True) or {})
@@ -84,7 +73,6 @@ def evaluar_acceso():
         doc["_id"] = store.col("accesos").insertar(doc)
     return jsonify(doc)
 
-
 @api_accesos.get("/accesos")
 def accesos():
     store = get_store()
@@ -102,16 +90,12 @@ def accesos():
     limite = min(int(request.args.get("limite", 100)), 500)
     return jsonify(store.col("accesos").buscar(filtro, orden=[("timestamp", -1)], limite=limite))
 
-
-# -------------------------------------------------- reglas / simulador
 @api_accesos.get("/reglas/tablas")
 def tablas():
     return jsonify(tablas_para_ui())
 
-
 @api_accesos.post("/reglas/evaluar")
 def reglas_evaluar():
-    """Evalúa sin persistir: para el simulador de interruptores en vivo."""
     datos = request.get_json(force=True, silent=True) or {}
     try:
         res = evaluar_camion(bool(datos.get("P")), bool(datos.get("Q")),
@@ -120,7 +104,6 @@ def reglas_evaluar():
     except TypeError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(res)
-
 
 @api_accesos.get("/reglas/analisis")
 def analisis():

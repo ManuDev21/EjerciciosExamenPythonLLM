@@ -4,7 +4,7 @@
 
 {% block contenido %}
 <div class="row g-3">
-  <!-- Formulario de evaluación -->
+
   <div class="col-lg-5">
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-search me-1"></i>1. Buscar camión (opcional)</div>
@@ -49,7 +49,6 @@
     </div>
   </div>
 
-  <!-- Resultado -->
   <div class="col-lg-7">
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-stoplights me-1"></i>Resultado</div>
@@ -80,7 +79,6 @@
   </div>
 </div>
 
-<!-- Modal explicación -->
 <div class="modal fade" id="modalExplica" tabindex="-1">
   <div class="modal-dialog modal-lg"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-list-ol me-1"></i>Explicación paso a paso</h5>
@@ -132,7 +130,6 @@ btnBuscar.addEventListener('click', async () => {
     if (!docs.length) docs = await api('/api/camiones?placa=' + encodeURIComponent(q.toUpperCase()));
     if (!docs.length) { camionSel = null; infoCamion.textContent = 'No se encontró ese camión en el registro.'; return; }
     camionSel = docs[0];
-    // Precargar premisas desde la ficha del camión
     swP.checked = !!camionSel.autorizacion;
     swS.checked = !!camionSel.certificacion_vigente;
     swV.checked = (camionSel.certificacion_dias_restantes ?? 999) < 30;

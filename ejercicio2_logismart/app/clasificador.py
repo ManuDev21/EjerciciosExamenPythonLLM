@@ -1,14 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Clasificador híbrido de incidentes: reglas + LLM con fusión segura.
-
-Flujo:
-    1. Clasificador por reglas (palabras clave, igual que el script base).
-    2. Clasificador LLM (Ollama) que debe devolver un JSON exacto que se
-       valida con pydantic; si el JSON es inválido se reintenta y después
-       se cae al clasificador por reglas (plan de respaldo).
-    3. Fusión: si ambos discrepan, prevalece la prioridad más alta
-       (ante la duda, seguridad) y se marca requiere_revision_humana.
-"""
 import json
 import re
 import time
@@ -18,10 +7,6 @@ from pydantic import ValidationError
 
 from . import llm
 from .esquemas import ClasificacionLLM
-
-# ---------------------------------------------------------------------------
-# 1. CLASIFICADOR POR REGLAS (idéntico al script monolítico)
-# ---------------------------------------------------------------------------
 
 CATEGORIAS_KW = {
     "materiales_peligrosos": ["peligroso", "derrame", "fuga", "quimico", "inflamable", "toxico", "corrosivo"],
@@ -43,15 +28,11 @@ PRIORIDAD_BASE = {
 }
 ORDEN_PRIORIDAD = ["baja", "media", "alta", "critica"]
 
-
 def _normalizar(texto: str) -> str:
-    """Minúsculas sin acentos ni ñ para comparar palabras clave."""
     texto = unicodedata.normalize("NFD", texto.lower())
     return "".join(c for c in texto if unicodedata.category(c) != "Mn")
 
-
 def clasificar_por_reglas(asunto: str, cuerpo: str) -> dict:
-    """Categoría por conteo de palabras clave + escalado por urgencia."""
     texto = _normalizar(f"{asunto} {cuerpo}")
     puntajes = {cat: [kw for kw in kws if kw in texto] for cat, kws in CATEGORIAS_KW.items()}
     mejor_cat = max(puntajes, key=lambda c: len(puntajes[c]))
@@ -68,9 +49,7 @@ def clasificar_por_reglas(asunto: str, cuerpo: str) -> dict:
     return {"categoria": mejor_cat, "prioridad": prioridad,
             "palabras_clave": coincidencias + urgentes}
 
-
 def extraer_datos(asunto: str, cuerpo: str) -> dict:
-    """Entidades por expresiones regulares (None si no se encuentran)."""
     texto = f"{asunto}\n{cuerpo}"
     m_placa = re.search(r"\b[A-Z0-9]{2,3}-\d{2,3}-[A-Z0-9]{1,2}\b", texto.upper())
     m_camion = re.search(r"\bCAM-\d+\b", texto.upper())
@@ -86,11 +65,6 @@ def extraer_datos(asunto: str, cuerpo: str) -> dict:
         "peso_reportado_kg": peso_kg,
         "ubicacion": f"{m_ubic.group(1)} {m_ubic.group(2)}".lower() if m_ubic else None,
     }
-
-
-# ---------------------------------------------------------------------------
-# 2. CLASIFICADOR LLM (JSON estricto validado con pydantic + reintentos)
-# ---------------------------------------------------------------------------
 
 PROMPT_CLASIFICADOR = """Eres el clasificador de incidentes del centro logístico LogiSmart.
 Analiza el correo y responde ÚNICAMENTE con un objeto JSON válido, sin texto
@@ -120,22 +94,15 @@ Reglas:
 - Extrae solo datos presentes en el correo; si falta un dato usa null.
 """
 
-
 def _parsear_json(texto: str) -> dict:
-    """Tolera que el LLM envuelva el JSON en ```json ... ``` o texto extra."""
     limpio = texto.strip()
     m = re.search(r"\{.*\}", limpio, re.DOTALL)
     if not m:
         raise ValueError("la respuesta no contiene un objeto JSON")
     return json.loads(m.group(0))
 
-
 def clasificar_llm(asunto: str, cuerpo: str, modelo: str,
                    max_intentos: int = 2) -> dict:
-    """Devuelve la clasificación del LLM validada con pydantic.
-
-    Retorna {ok, datos, crudo, intentos, latencia_ms, error}.
-    """
     if not llm.disponible():
         return {"ok": False, "datos": None, "crudo": None, "intentos": 0,
                 "latencia_ms": 0, "error": "Ollama no disponible"}
@@ -166,14 +133,8 @@ def clasificar_llm(asunto: str, cuerpo: str, modelo: str,
     return {"ok": False, "datos": None, "crudo": crudo, "intentos": intentos,
             "latencia_ms": latencia_total, "error": ultimo_error}
 
-
-# ---------------------------------------------------------------------------
-# 3. FUSIÓN (híbrido)
-# ---------------------------------------------------------------------------
-
 def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
-               modelo: str = "llama3", max_intentos: int = 2) -> dict:
-    """Punto único de entrada. modo: reglas | llm | hibrido."""
+               modelo: str = "llama3.2:3b", max_intentos: int = 2) -> dict:
     inicio = time.perf_counter()
     reglas = clasificar_por_reglas(asunto, cuerpo)
     entidades_regex = extraer_datos(asunto, cuerpo)
@@ -188,7 +149,6 @@ def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
 
     if modo == "llm":
         if not res_llm["ok"]:
-            # plan de respaldo: el LLM falló -> se entrega el clasificador por reglas
             return {**reglas, "fuente": "reglas (respaldo: LLM falló)",
                     "entidades": entidades_regex, "requiere_revision_humana": True,
                     "latencia_ms": int((time.perf_counter() - inicio) * 1000),
@@ -198,7 +158,6 @@ def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
                 "latencia_ms": res_llm["latencia_ms"],
                 "detalle": {"llm": res_llm}}
 
-    # ---- híbrido ----------------------------------------------------------
     if not res_llm["ok"]:
         return {**reglas, "fuente": "reglas (respaldo: LLM no disponible)",
                 "entidades": entidades_regex, "requiere_revision_humana": False,
@@ -209,10 +168,7 @@ def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
     datos_llm = res_llm["datos"]
     cat_l, pri_l = datos_llm["categoria"], datos_llm["prioridad"]
 
-    # prioridad final = la más alta reportada (ante la duda, seguridad)
     prioridad = pri_r if ORDEN_PRIORIDAD.index(pri_r) >= ORDEN_PRIORIDAD.index(pri_l) else pri_l
-    # la categoría se toma del clasificador que reportó la prioridad mayor;
-    # en empate se conserva la del LLM (entendió la semántica del correo)
     if ORDEN_PRIORIDAD.index(pri_r) > ORDEN_PRIORIDAD.index(pri_l):
         categoria = cat_r
     else:
@@ -220,7 +176,7 @@ def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
     revision = (cat_r != cat_l) or (pri_r != pri_l)
 
     entidades = {k: v for k, v in datos_llm["entidades"].items() if v is not None}
-    for k, v in entidades_regex.items():  # regex como respaldo de campos nulos
+    for k, v in entidades_regex.items():
         entidades.setdefault(k, v)
 
     return {"categoria": categoria, "prioridad": prioridad,
@@ -234,19 +190,8 @@ def clasificar(asunto: str, cuerpo: str, modo: str = "hibrido",
                         "llm": {"categoria": cat_l, "prioridad": pri_l,
                                 "intentos": res_llm["intentos"]}}}
 
-
-# ---------------------------------------------------------------------------
-# 4. EVALUACIÓN CON DATASET ETIQUETADO
-# ---------------------------------------------------------------------------
-
 def evaluar_dataset(dataset: list, modelos_modos: list, modelo: str,
                     max_intentos: int = 2, progreso=None) -> dict:
-    """Corre el/los clasificadores sobre el dataset etiquetado.
-
-    modelos_modos: subconjunto de ["reglas", "llm", "hibrido"].
-    Devuelve métricas por modo: exactitud (categoría y prioridad), matriz de
-    confusión de categorías y latencia promedio.
-    """
     resultados = {m: {"aciertos_cat": 0, "aciertos_pri": 0, "latencias": [],
                       "matriz": {}, "detalle": []} for m in modelos_modos}
     total = len(dataset)

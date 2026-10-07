@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Fábrica de la aplicación Flask de LogiSmart."""
 import json
 import os
 import sys
@@ -11,17 +9,14 @@ import config
 
 from .db import Store
 
-
 def get_store() -> Store:
     return current_app.extensions["store"]
-
 
 def cargar_dataset() -> list:
     if os.path.exists(config.ARCHIVO_CORREOS):
         with open(config.ARCHIVO_CORREOS, encoding="utf-8") as f:
             return json.load(f)
     return []
-
 
 def create_app(sembrar_datos: bool = True) -> Flask:
     app = Flask(__name__)
@@ -40,7 +35,7 @@ def create_app(sembrar_datos: bool = True) -> Flask:
         try:
             from .seed import sembrar
             sembrar(store, cargar_dataset())
-        except Exception as exc:  # la app arranca aunque falle la semilla
+        except Exception as exc:
             app.logger.warning("No se pudieron sembrar los datos demo: %s", exc)
 
     return app

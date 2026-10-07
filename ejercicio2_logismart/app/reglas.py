@@ -1,29 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Motor de reglas de acceso (lógica proposicional) de LogiSmart.
-
-Premisas:
-    P: Vehículo con autorización previa
-    Q: El peso excede el límite permitido
-    R: Carga con materiales peligrosos
-    S: Conductor con certificación vigente
-    T: Horario restringido vigente para materiales peligrosos   (NUEVA)
-    V: Certificación del conductor vence en menos de 30 días    (NUEVA)
-
-Reglas originales (se conservan intactas):
-    A (Acceso estándar)      = P ∧ S ∧ ¬Q
-    E (Inspección especial)  = P ∧ (R ∨ Q)
-
-Reglas nuevas (justificación en JUSTIFICACIONES):
-    H (Retención por horario)         = R ∧ T
-    W (Alerta de certif. por vencer)  = S ∧ V
-
-Decisión final (por precedencia):
-    ¬P        -> denegado
-    H         -> retenido por horario restringido (domina a A y a E)
-    E         -> inspección especial (domina a A cuando ambas valen)
-    A         -> acceso estándar
-    resto     -> denegado
-"""
 import itertools
 
 PREMISAS = {
@@ -58,14 +32,11 @@ DECISIONES = {
     "denegado": {"semaforo": "rojo", "texto": "Acceso denegado"},
 }
 
-
 def _v(b: bool) -> str:
     return "V" if b else "F"
 
-
 def evaluar_camion(P: bool, Q: bool, R: bool, S: bool,
                    T: bool = False, V: bool = False) -> dict:
-    """Evalúa las cuatro reglas y deriva la decisión con su explicación."""
     for nombre, valor in (("P", P), ("Q", Q), ("R", R), ("S", S), ("T", T), ("V", V)):
         if not isinstance(valor, bool):
             raise TypeError(f"La premisa {nombre} debe ser bool, se recibió {type(valor).__name__}")
@@ -88,7 +59,7 @@ def evaluar_camion(P: bool, Q: bool, R: bool, S: bool,
 
     semaforo = DECISIONES[decision]["semaforo"]
     if decision == "acceso_estandar" and W:
-        semaforo = "amarillo"  # entra, pero el operador debe atender la alerta
+        semaforo = "amarillo"
 
     explicacion = [
         f"P={_v(P)} ({PREMISAS['P']})",
@@ -123,13 +94,7 @@ def evaluar_camion(P: bool, Q: bool, R: bool, S: bool,
             "texto_decision": DECISIONES[decision]["texto"],
             "explicacion": explicacion}
 
-
 def tabla_verdad(variables=("P", "Q", "R", "S")) -> list:
-    """Tabla de verdad para el subconjunto de variables indicado.
-
-    Las premisas no listadas se fijan en Falso. Con las 4 originales
-    produce las 16 filas clásicas.
-    """
     filas = []
     fijas = {v: False for v in PREMISAS if v not in variables}
     for valores in itertools.product([True, False], repeat=len(variables)):
@@ -140,24 +105,14 @@ def tabla_verdad(variables=("P", "Q", "R", "S")) -> list:
                       "decision": res["decision"]})
     return filas
 
-
 def tablas_para_ui() -> dict:
-    """Tablas usadas por el simulador: original (16) + una por regla nueva."""
     return {"original": tabla_verdad(("P", "Q", "R", "S")),
             "H": tabla_verdad(("R", "T")),
             "W": tabla_verdad(("S", "V")),
             "premisas": PREMISAS, "reglas": REGLAS,
             "justificaciones": JUSTIFICACIONES}
 
-
 def analisis_reglas() -> dict:
-    """Reto opcional: detecta redundancias y conflictos entre reglas.
-
-    Recorre las 64 combinaciones de (P,Q,R,S,T,V) y compara las salidas.
-    - Redundancia: dos reglas con salida idéntica en toda la tabla.
-    - Conflicto: combinaciones donde reglas de distinto semáforo valen a
-      la vez; el sistema las resuelve por precedencia y aquí se reportan.
-    """
     salidas = {"A": [], "E": [], "H": [], "W": []}
     conflictos = {"A_y_H": 0, "E_y_H": 0, "A_y_E": 0}
     por_decision = {}

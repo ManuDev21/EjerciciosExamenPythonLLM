@@ -1,14 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Capa de persistencia de LogiSmart.
-
-Intenta conectar con MongoDB (local o Atlas vía MONGO_URI). Si la
-conexión falla, degrada a un almacén JSON local para que la interfaz
-siga operando en modo demostración (se indica con motor='local').
-
-Colecciones usadas:
-    camiones, accesos, incidentes, riesgos_eticos, evaluaciones_llm,
-    conversaciones, configuracion, meta
-"""
 import json
 import os
 import re
@@ -19,14 +8,10 @@ from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
-
 def ahora_iso() -> str:
-    """Marca de tiempo UTC en ISO 8601 (comparable lexicográficamente)."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-
 def a_json(doc):
-    """Convierte un documento a tipos serializables en JSON."""
     if doc is None:
         return None
     if isinstance(doc, list):
@@ -45,9 +30,7 @@ def a_json(doc):
             salida[clave] = valor
     return salida
 
-
 def _campo(doc, ruta):
-    """Obtiene un campo con notación de puntos: 'clasificacion.categoria'."""
     actual = doc
     for parte in ruta.split("."):
         if not isinstance(actual, dict):
@@ -55,9 +38,7 @@ def _campo(doc, ruta):
         actual = actual.get(parte)
     return actual
 
-
 def _coincide(doc, filtro) -> bool:
-    """Matcher mínimo compatible con los operadores usados por la app."""
     for clave, esperado in (filtro or {}).items():
         real = _campo(doc, clave)
         if isinstance(esperado, dict):
@@ -76,21 +57,17 @@ def _coincide(doc, filtro) -> bool:
             return False
     return True
 
-
 def _ordenar(docs, orden):
     for campo, direccion in reversed(orden or []):
         docs.sort(key=lambda d: str(_campo(d, campo) or ""), reverse=(direccion == -1))
     return docs
 
-
 class Coleccion:
-    """Interfaz uniforme sobre una colección Mongo o una lista local."""
 
     def __init__(self, nombre, store):
         self.nombre = nombre
         self._store = store
 
-    # -- escritura ----------------------------------------------------------
     def insertar(self, doc: dict) -> str:
         doc = dict(doc)
         doc.setdefault("creado_en", ahora_iso())
@@ -128,7 +105,6 @@ class Coleccion:
         return len(self._store.local[self.nombre]) < antes
 
     def agregar_a_lista(self, doc_id: str, campo: str, item: dict) -> bool:
-        """Append atómico a un campo lista (historial de cambios)."""
         if self._store.mongo is not None:
             res = self._store.mongo[self.nombre].update_one(
                 self._store.filtro_id(doc_id), {"$push": {campo: item}})
@@ -140,7 +116,6 @@ class Coleccion:
                 return True
         return False
 
-    # -- lectura -------------------------------------------------------------
     def buscar(self, filtro=None, orden=None, limite=None) -> list:
         if self._store.mongo is not None:
             cur = self._store.mongo[self.nombre].find(filtro or {})
@@ -177,9 +152,7 @@ class Coleccion:
             self._store.local[self.nombre] = []
             self._store.guardar_local()
 
-
 class Store:
-    """Fachada de persistencia: MongoDB si responde, JSON local si no."""
 
     COLECCIONES = ["camiones", "accesos", "incidentes", "riesgos_eticos",
                    "evaluaciones_llm", "conversaciones", "configuracion", "meta"]
@@ -195,7 +168,6 @@ class Store:
         self.local = {c: [] for c in self.COLECCIONES}
         self.reconectar()
 
-    # ---------------- conexión ---------------------------------------------
     def reconectar(self) -> bool:
         try:
             cliente = MongoClient(self.uri, serverSelectionTimeoutMS=self.timeout_ms)
@@ -227,7 +199,6 @@ class Store:
         except Exception:
             return {"_id": doc_id}
 
-    # ---------------- almacén local (respaldo) ------------------------------
     def _cargar_local(self):
         if self.archivo_fallback and os.path.exists(self.archivo_fallback):
             try:
@@ -247,7 +218,6 @@ class Store:
             json.dump(self.local, f, ensure_ascii=False, default=str)
         os.replace(tmp, self.archivo_fallback)
 
-    # ---------------- configuración persistente ----------------------------
     def obtener_config(self) -> dict:
         doc = self.col("configuracion").buscar_uno({"_tipo": "app"})
         if not doc:
@@ -260,10 +230,7 @@ class Store:
         cfg = self.obtener_config()
         self.col("configuracion").actualizar(cfg["_id"], campos)
 
-    # ---------------- agregación: incidentes por categoría y semana --------
     def incidentes_por_categoria_semana(self) -> list:
-        """Agregación real en MongoDB ($group); equivalente en Python si
-        se está en modo local. Devuelve [{categoria, semana, total}]."""
         if self.mongo is not None:
             pipeline = [
                 {"$group": {

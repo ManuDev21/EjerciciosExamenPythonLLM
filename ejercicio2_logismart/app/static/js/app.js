@@ -1,5 +1,3 @@
-/* LogiSmart — helpers compartidos del frontend */
-
 async function api(ruta, opciones = {}) {
   if (opciones.body && typeof opciones.body !== 'string') {
     opciones.body = JSON.stringify(opciones.body);
@@ -66,7 +64,6 @@ function badgeNivel(n) {
   return `<span class="badge text-bg-${map[n] || 'secondary'}">${esc(n || '—')}</span>`;
 }
 
-/* Estado de conexiones en la barra superior */
 async function pintarEstadoGlobal() {
   try {
     const d = await api('/api/estado');
@@ -82,7 +79,7 @@ async function pintarEstadoGlobal() {
       lm.title = d.ollama.disponible ? 'Modelo: ' + d.ollama.modelo_actual : 'Ollama no responde';
       lm.innerHTML = `<i class="bi bi-cpu"></i> ${d.ollama.disponible ? d.ollama.modelo_actual : 'LLM off'}`;
     }
-  } catch (e) { /* silencioso */ }
+  } catch (e) {  }
 }
 
 function spinnerBtn(btn, on, txt = 'Procesando…') {

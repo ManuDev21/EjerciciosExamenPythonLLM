@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-"""API núcleo: estado del sistema, dashboard, configuración, seed y reportes."""
 from collections import Counter
 
 from flask import Blueprint, Response, jsonify, request
@@ -11,10 +9,8 @@ import config as cfg
 
 api_nucleo = Blueprint("api_nucleo", __name__, url_prefix="/api")
 
-
 def _modelo_actual(store) -> str:
-    return store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT
-
+    return llm.resolver_modelo(store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT)
 
 @api_nucleo.get("/estado")
 def estado():
@@ -24,7 +20,6 @@ def estado():
                                "modelos": llm.listar_modelos(),
                                "modelo_actual": _modelo_actual(store)},
                     "config": store.obtener_config()})
-
 
 @api_nucleo.get("/dashboard")
 def dashboard():
@@ -69,12 +64,9 @@ def dashboard():
         "motor": store.motor,
     })
 
-
 @api_nucleo.get("/incidentes/agregacion")
 def agregacion():
-    """Incidentes agrupados por categoría y semana ISO."""
     return jsonify(get_store().incidentes_por_categoria_semana())
-
 
 @api_nucleo.route("/config", methods=["GET", "PUT"])
 def configuracion():
@@ -93,7 +85,6 @@ def configuracion():
         store.guardar_config(campos)
     return jsonify(store.obtener_config())
 
-
 @api_nucleo.post("/seed")
 def seed():
     store = get_store()
@@ -102,17 +93,14 @@ def seed():
     resumen = sembrar(store, cargar_dataset(), forzar=forzar)
     return jsonify({"ok": True, "sembrado": resumen, "motor": store.motor})
 
-
 @api_nucleo.post("/reconectar")
 def reconectar():
     store = get_store()
     ok = store.reconectar()
     return jsonify({"conectado": ok, "estado": store.estado()})
 
-
 COLECCIONES_EXPORTABLES = {"camiones", "accesos", "incidentes",
                            "riesgos_eticos", "evaluaciones_llm"}
-
 
 @api_nucleo.get("/reportes/<coleccion>/<formato>")
 def reporte(coleccion, formato):
@@ -130,6 +118,6 @@ def reporte(coleccion, formato):
         return Response(a_json(docs), mimetype="application/json; charset=utf-8",
                         headers={"Content-Disposition":
                                  f"attachment; filename={nombre_archivo(coleccion, 'json')}"})
-    if formato == "datos":  # JSON embebido para el PDF del lado cliente
+    if formato == "datos":
         return jsonify({"coleccion": coleccion, "generado": ahora_iso(), "datos": docs})
     return jsonify({"error": "formato no soportado (csv|json)"}), 404

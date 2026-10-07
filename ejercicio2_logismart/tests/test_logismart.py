@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Pruebas unitarias de LogiSmart Web.
-
-    python -m unittest discover -s tests -v   (desde ejercicio2_logismart)
-"""
 import os
 import sys
 import unittest
@@ -13,9 +8,7 @@ from app import clasificador, reglas
 from app.db import _coincide
 from app.esquemas import ClasificacionLLM, RiesgoIn, nivel_riesgo
 
-
 class TestReglas(unittest.TestCase):
-    """Motor de reglas: reglas originales + nuevas + decisión final."""
 
     def test_acceso_estandar(self):
         r = reglas.evaluar_camion(True, False, False, True)
@@ -33,18 +26,15 @@ class TestReglas(unittest.TestCase):
             self.assertEqual(reglas.evaluar_camion(False, q, r_, s, t, v)["decision"], "denegado")
 
     def test_regla_nueva_horario(self):
-        """H = R∧T retiene aunque A y E valgan."""
         r = reglas.evaluar_camion(True, False, True, True, T=True)
         self.assertTrue(r["H"])
         self.assertEqual(r["decision"], "retenido_horario")
         self.assertEqual(r["semaforo"], "rojo")
-        # sin T no hay retención
         r2 = reglas.evaluar_camion(True, False, True, True, T=False)
         self.assertFalse(r2["H"])
         self.assertEqual(r2["decision"], "inspeccion_especial")
 
     def test_regla_nueva_certificacion_por_vencer(self):
-        """W = S∧V: acceso estándar permitido pero con alerta (semáforo amarillo)."""
         r = reglas.evaluar_camion(True, False, False, True, V=True)
         self.assertTrue(r["W"])
         self.assertEqual(r["decision"], "acceso_estandar")
@@ -67,9 +57,7 @@ class TestReglas(unittest.TestCase):
         a = reglas.analisis_reglas()
         self.assertFalse(a["hay_contradiccion_logica"])
         self.assertEqual(a["redundantes"], [])
-        # A y E valen a la vez cuando P∧S∧¬Q∧R -> conflicto conocido y resuelto
         self.assertGreater(a["conflictos"][2]["casos"], 0)
-
 
 class TestClasificadorReglas(unittest.TestCase):
     CORREO = dict(asunto="URGENTE: derrame en andén 3",
@@ -100,10 +88,9 @@ class TestClasificadorReglas(unittest.TestCase):
         self.assertFalse(r["requiere_revision_humana"])
 
     def test_hibrido_cae_a_reglas_sin_llm(self):
-        """Sin Ollama el híbrido debe seguir funcionando (plan de respaldo)."""
         r = clasificador.clasificar("Consulta", "Hola, tengo una duda general.",
                                     modo="hibrido", modelo="modelo-inexistente")
-        if r.get("error_llm"):  # LLM no disponible en este entorno
+        if r.get("error_llm"):
             self.assertIn("reglas", r["fuente"])
         self.assertIn(r["categoria"], clasificador.PRIORIDAD_BASE)
 
@@ -117,7 +104,6 @@ class TestClasificadorReglas(unittest.TestCase):
         for item in datos:
             self.assertIn(item["categoria"], clasificador.PRIORIDAD_BASE)
             self.assertIn(item["prioridad"], clasificador.ORDEN_PRIORIDAD)
-
 
 class TestEsquemas(unittest.TestCase):
     def test_json_llm_valido(self):
@@ -145,7 +131,6 @@ class TestEsquemas(unittest.TestCase):
             RiesgoIn(modulo="x", descripcion="desc", categoria="sesgo",
                      probabilidad=6, impacto=1)
 
-
 class TestMatcherLocal(unittest.TestCase):
     def test_operadores(self):
         doc = {"estado": "nuevo", "clasificacion": {"categoria": "sobrepeso"}, "n": 5}
@@ -154,7 +139,6 @@ class TestMatcherLocal(unittest.TestCase):
         self.assertTrue(_coincide(doc, {"estado": {"$in": ["nuevo", "en_atencion"]}}))
         self.assertTrue(_coincide(doc, {"n": {"$gte": 5, "$lte": 10}}))
         self.assertFalse(_coincide(doc, {"estado": {"$ne": "nuevo"}}))
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

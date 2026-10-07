@@ -1,14 +1,11 @@
-# -*- coding: utf-8 -*-
-"""API del asistente explicativo (RAG sobre MongoDB)."""
 import uuid
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, Response, jsonify, request, session
 
-from .. import get_store, asistente
+from .. import get_store, asistente, llm
 import config as cfg
 
 api_asistente = Blueprint("api_asistente", __name__, url_prefix="/api/asistente")
-
 
 @api_asistente.post("/preguntar")
 def preguntar():
@@ -20,10 +17,11 @@ def preguntar():
     if len(pregunta) > 2000:
         return jsonify({"error": "Pregunta demasiado larga (máx. 2000)."}), 400
     session.setdefault("sid", uuid.uuid4().hex)
-    modelo = store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT
-    res = asistente.responder(pregunta, store, modelo, session["sid"])
-    return jsonify(res)
-
+    modelo = llm.resolver_modelo(
+        store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT)
+    return Response(asistente.responder_stream(pregunta, store, modelo,
+                                               session["sid"]),
+                    mimetype="application/x-ndjson")
 
 @api_asistente.get("/historial")
 def historial():
@@ -32,7 +30,6 @@ def historial():
     docs = store.col("conversaciones").buscar({"sid": sid},
                                               orden=[("timestamp", -1)], limite=30)
     return jsonify(list(reversed(docs)))
-
 
 @api_asistente.delete("/historial")
 def borrar_historial():

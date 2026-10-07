@@ -59,12 +59,43 @@ formPregunta.addEventListener('submit', async (e) => {
   agregarMsg(pregunta, 'msg-user');
   const t = agregarMsg('Consultando la base de datos y el LLM…', 'msg-bot');
   spinnerBtn(btnEnviar, true);
+  let texto = '', meta = {};
   try {
-    const r = await api('/api/asistente/preguntar', { method: 'POST', body: { pregunta } });
-    t.textContent = r.respuesta;
-    t.insertAdjacentHTML('beforeend', htmlFuentes(r.fuentes, r.modo));
+    const r = await fetch('/api/asistente/preguntar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pregunta })
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      t.textContent = 'Error: ' + (data.error || ('HTTP ' + r.status));
+      return;
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const linea = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!linea) continue;
+        const data = JSON.parse(linea);
+        if (data.error) { t.textContent = 'Error: ' + data.error; return; }
+        if (data.chunk) {
+          texto += data.chunk;
+          t.textContent = texto;
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        if (data.done) meta = data;
+      }
+    }
+    if (!texto) t.textContent = 'Sin respuesta.';
+    if (meta.fuentes) t.insertAdjacentHTML('beforeend', htmlFuentes(meta.fuentes, meta.modo));
   } catch (err) {
-    t.textContent = 'Error: ' + err.message;
+    if (!texto) t.textContent = 'Error: ' + err.message;
   } finally {
     spinnerBtn(btnEnviar, false);
     chatBox.scrollTop = chatBox.scrollHeight;

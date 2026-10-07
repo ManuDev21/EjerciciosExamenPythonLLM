@@ -36,7 +36,6 @@
   </div>
 </div>
 
-<!-- Modal alta/edición -->
 <div class="modal fade" id="modalRiesgo" tabindex="-1">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title" id="tituloModal">Nuevo riesgo</h5>
@@ -85,12 +84,10 @@ const CLASE = { critico: 'nivel-critico', alto: 'nivel-alto', medio: 'nivel-medi
 async function cargar() {
   const d = await api('/api/riesgos/resumen');
   riesgos = d.riesgos;
-  // KPIs por nivel
   kNiveles.innerHTML = ['critico','alto','medio','bajo'].map(n =>
     `<div class="col-6 col-md-3"><div class="card kpi-card"><div class="card-body text-center py-2">
      <div class="fs-4 fw-bold">${d.por_nivel[n]}</div><div>${badgeNivel(n)}</div></div></div></div>`).join('');
 
-  // matriz 5x5 (impacto filas 5→1, probabilidad columnas 1→5)
   let html = '<tr><th>I\\P</th>' + [1,2,3,4,5].map(p => `<th>${p}</th>`).join('') + '</tr>';
   for (let i = 5; i >= 1; i--) {
     html += `<tr><th>${i}</th>`;
@@ -104,7 +101,6 @@ async function cargar() {
   }
   matriz.innerHTML = html;
 
-  // gráfica inherente vs residual
   if (chart) chart.destroy();
   const etiq = riesgos.map((r, idx) => 'R' + (idx + 1));
   chart = new Chart(chResidual, { type: 'bar',

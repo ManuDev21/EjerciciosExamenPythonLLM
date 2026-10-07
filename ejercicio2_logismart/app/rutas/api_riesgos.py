@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-"""API de la matriz de riesgos éticos: CRUD + resumen para las gráficas."""
 from flask import Blueprint, jsonify, request
 from pydantic import ValidationError
 
@@ -9,17 +7,14 @@ from ..esquemas import RiesgoIn, enriquecer_riesgo
 
 api_riesgos = Blueprint("api_riesgos", __name__, url_prefix="/api/riesgos")
 
-
 def _lista(store):
     docs = [enriquecer_riesgo(d) for d in store.col("riesgos_eticos").buscar()]
     docs.sort(key=lambda d: d["puntaje"], reverse=True)
     return docs
 
-
 @api_riesgos.get("")
 def listar():
     return jsonify(_lista(get_store()))
-
 
 @api_riesgos.post("")
 def crear():
@@ -32,7 +27,6 @@ def crear():
     doc["historico"] = [{"ts": ahora_iso(), "evento": "alta de riesgo"}]
     doc["_id"] = store.col("riesgos_eticos").insertar(doc)
     return jsonify(enriquecer_riesgo(doc)), 201
-
 
 @api_riesgos.route("/<doc_id>", methods=["GET", "PUT", "DELETE"])
 def detalle(doc_id):
@@ -60,13 +54,12 @@ def detalle(doc_id):
                             {"ts": ahora_iso(), "evento": f"edición: {', '.join(cambios)}"})
     return jsonify(enriquecer_riesgo(col.buscar_por_id(doc_id)))
 
-
 @api_riesgos.get("/resumen")
 def resumen():
     docs = _lista(get_store())
     por_nivel = {"critico": 0, "alto": 0, "medio": 0, "bajo": 0}
     por_categoria = {}
-    matriz = []  # para la gráfica de calor 5x5
+    matriz = []
     for d in docs:
         por_nivel[d["nivel"]] += 1
         por_categoria[d["categoria"]] = por_categoria.get(d["categoria"], 0) + 1

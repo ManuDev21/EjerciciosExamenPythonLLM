@@ -1,13 +1,10 @@
-# -*- coding: utf-8 -*-
-"""API de incidentes: clasificación (reglas/LLM/híbrido), CRUD, cambio de
-estado con historial, y evaluación del dataset etiquetado en segundo plano."""
 import threading
 import uuid
 
 from flask import Blueprint, jsonify, request
 from pydantic import ValidationError
 
-from .. import get_store, cargar_dataset, clasificador
+from .. import get_store, cargar_dataset, clasificador, llm
 from ..db import ahora_iso
 from ..esquemas import ClasificarIn, IncidenteUpdate
 import config as cfg
@@ -17,10 +14,8 @@ api_incidentes = Blueprint("api_incidentes", __name__, url_prefix="/api")
 EVAL_JOB = {"corriendo": False, "progreso": 0, "total": 0,
             "resultado": None, "error": None}
 
-
 def _modelo_actual(store) -> str:
-    return store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT
-
+    return llm.resolver_modelo(store.obtener_config().get("modelo") or cfg.MODELO_DEFAULT)
 
 def _doc_incidente(datos: ClasificarIn, resultado: dict) -> dict:
     return {"remitente": datos.remitente, "asunto": datos.asunto,
@@ -35,7 +30,6 @@ def _doc_incidente(datos: ClasificarIn, resultado: dict) -> dict:
             "timestamp": ahora_iso(),
             "historial": [{"ts": ahora_iso(),
                            "evento": f"clasificado por {resultado.get('fuente')}"}]}
-
 
 @api_incidentes.post("/incidentes/clasificar")
 def clasificar():
@@ -53,7 +47,6 @@ def clasificar():
         doc["_id"] = store.col("incidentes").insertar(doc)
         resultado["incidente"] = doc
     return jsonify(resultado)
-
 
 @api_incidentes.route("/incidentes", methods=["GET", "POST"])
 def incidentes():
@@ -80,7 +73,6 @@ def incidentes():
     doc = _doc_incidente(datos, resultado)
     doc["_id"] = col.insertar(doc)
     return jsonify(doc), 201
-
 
 @api_incidentes.route("/incidentes/<doc_id>", methods=["GET", "PUT", "DELETE"])
 def incidente_detalle(doc_id):
@@ -112,7 +104,6 @@ def incidente_detalle(doc_id):
     if datos.nota:
         eventos.append(f"nota: {datos.nota}")
     if cambios:
-        # campos anidados: actualizar el dict completo para el almacén local
         if "clasificacion.categoria" in cambios or "clasificacion.prioridad" in cambios:
             clasif = dict(doc.get("clasificacion", {}))
             clasif["categoria"] = datos.categoria or clasif.get("categoria")
@@ -124,8 +115,6 @@ def incidente_detalle(doc_id):
         col.agregar_a_lista(doc_id, "historial", {"ts": ahora_iso(), "evento": ev})
     return jsonify(col.buscar_por_id(doc_id))
 
-
-# ------------------------------------------------------------ evaluación
 def _trabajar_evaluacion(store, modos, modelo):
     EVAL_JOB.update({"corriendo": True, "progreso": 0, "error": None,
                      "resultado": None})
@@ -133,7 +122,6 @@ def _trabajar_evaluacion(store, modos, modelo):
         dataset = cargar_dataset()
         EVAL_JOB["total"] = len(dataset) * len(modos)
 
-        # progreso por correo procesado (cada correo ejecuta len(modos) clasificaciones)
         def avance(i, total):
             EVAL_JOB["progreso"] = i * len(modos)
 
@@ -159,7 +147,6 @@ def _trabajar_evaluacion(store, modos, modelo):
     finally:
         EVAL_JOB["corriendo"] = False
 
-
 @api_incidentes.post("/evaluacion/ejecutar")
 def evaluacion_ejecutar():
     if EVAL_JOB["corriendo"]:
@@ -176,11 +163,9 @@ def evaluacion_ejecutar():
     hilo.start()
     return jsonify({"ok": True, "total": EVAL_JOB["total"]})
 
-
 @api_incidentes.get("/evaluacion/estado")
 def evaluacion_estado():
     return jsonify(EVAL_JOB)
-
 
 @api_incidentes.get("/evaluacion/historico")
 def evaluacion_historico():
