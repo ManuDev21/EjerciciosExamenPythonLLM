@@ -14,7 +14,7 @@ y `logiuncodigo.py`, ahora como **aplicaciones web Flask + HTML + CSS + JS + Boo
 pip install -r requirements.txt
 ```
 
-- **Ollama** ejecutándose (`ollama serve`) con algún modelo (p. ej. `ollama pull llama3`).
+- **Ollama** ejecutándose (`ollama serve`) con algún modelo (p. ej. `ollama pull llama3.2:3b`).
 - **MongoDB** local (`mongodb://localhost:27017`) o Atlas vía `MONGO_URI`.
   Si MongoDB no responde, LogiSmart degrada a un almacén JSON local y lo indica en la GUI.
 

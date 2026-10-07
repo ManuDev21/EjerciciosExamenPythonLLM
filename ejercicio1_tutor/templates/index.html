@@ -348,6 +348,7 @@ async function enviar() {
   txt.value = '';
   burbuja(mensaje, 'msg-user', 'tú');
   const t = indicador();
+  let texto = '', nodo = null, cursor = null;
   btnEnviar.disabled = true;
   pensando(true);
   try {
@@ -355,14 +356,51 @@ async function enviar() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({mensaje})
     });
-    const data = await r.json();
-    t.remove();
-    if (data.error) burbuja('⚠ ' + data.error, 'msg-sys');
-    else burbuja(data.respuesta, 'msg-bot', 'núcleo');
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      t.remove();
+      burbuja('⚠ ' + (data.error || 'Error del servidor.'), 'msg-sys');
+      return;
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const linea = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!linea) continue;
+        const data = JSON.parse(linea);
+        if (data.error) {
+          if (!texto) t.remove();
+          burbuja('⚠ ' + data.error, 'msg-sys');
+          return;
+        }
+        if (data.chunk) {
+          texto += data.chunk;
+          if (!nodo) {
+            t.innerHTML = '<span class="tag">núcleo</span>';
+            nodo = document.createTextNode('');
+            cursor = document.createElement('span');
+            cursor.className = 'blink-cursor';
+            t.appendChild(nodo);
+            t.appendChild(cursor);
+          }
+          nodo.data = texto;
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }
+      }
+    }
+    if (!texto) { t.remove(); burbuja('⚠ El núcleo no devolvió texto.', 'msg-sys'); }
   } catch {
-    t.remove();
+    if (!texto) t.remove();
     burbuja('⚠ Enlace interrumpido con el servidor.', 'msg-sys');
   } finally {
+    if (cursor) cursor.remove();
     btnEnviar.disabled = false;
     pensando(false, 'núcleo en espera');
     txt.focus();

@@ -1,66 +1,44 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-============================================================
- EJERCICIO 1 - TUTOR INTELIGENTE CON LLM (VERSIÓN WEB)
-============================================================
-
-Adaptación del script original p02primertutor_llm.py:
-
-  1. CONFIGURACIÓN DEL SISTEMA DISTINTA:
-     en lugar de un profesor de Inteligencia Artificial se
-     implementa "NutriChef", un asistente experto en cocina
-     saludable y nutrición básica.
-
-  2. INTERFAZ GRÁFICA:
-     aplicación web con Flask + HTML + Bootstrap que permite
-     chatear con el LLM de forma intuitiva (burbujas de
-     conversación, indicador de "escribiendo...", avisos de
-     error amigables).
-
-  3. RESUMEN DEL HISTORIAL:
-     el botón "Resumen" pide al propio LLM una síntesis breve
-     de la conversación mantenida con el usuario.
-
-Modelo: se detecta automáticamente el primer modelo instalado
-en Ollama (por defecto llama3 / llama3.2).
-
-Uso:
-    python app.py        -> http://127.0.0.1:5001
-============================================================
-"""
-
+import json
 import os
+import threading
 import uuid
 
 import ollama
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, Response, jsonify, render_template, request, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "nutrichef-dev-secret")
 
+MODELO_DEFAULT = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
-# ------------------------------------------------------------
-# 1. CONFIGURACIÓN DEL MODELO
-# ------------------------------------------------------------
+OPCIONES_LLM = {
+    "num_ctx": 4096,
+    "num_predict": 800,
+    "temperature": 0.7,
+}
+KEEP_ALIVE = "30m"  
 
-MODELO_DEFAULT = os.environ.get("OLLAMA_MODEL", "llama3")
+_MODELO_CACHE = None
 
 
 def modelo_disponible() -> str:
-    """Devuelve el primer modelo instalado en Ollama o el default."""
+    global _MODELO_CACHE
+    if _MODELO_CACHE:
+        return _MODELO_CACHE
     try:
-        modelos = ollama.list().get("models", [])
-        if modelos:
-            return modelos[0].get("model", MODELO_DEFAULT)
+        nombres = [m.get("model") for m in ollama.list().get("models", [])]
+        if MODELO_DEFAULT in nombres:
+            _MODELO_CACHE = MODELO_DEFAULT
+        elif ":" not in MODELO_DEFAULT:
+            _MODELO_CACHE = next(
+                (n for n in nombres if n.split(":")[0] == MODELO_DEFAULT),
+                nombres[0] if nombres else MODELO_DEFAULT,
+            )
+        else:
+            _MODELO_CACHE = nombres[0] if nombres else MODELO_DEFAULT
     except Exception:
-        pass
-    return MODELO_DEFAULT
-
-
-# ------------------------------------------------------------
-# 2. CONFIGURACIÓN DEL SISTEMA  (ejemplo DIFERENTE al original)
-# ------------------------------------------------------------
+        _MODELO_CACHE = MODELO_DEFAULT
+    return _MODELO_CACHE
 
 MENSAJE_SISTEMA = """
 Eres "NutriChef", un asistente experto en cocina saludable y
@@ -85,13 +63,8 @@ Debes:
 8. Mantener respuestas concisas: máximo 3 secciones cortas.
 """
 
-
-# ------------------------------------------------------------
-# 3. HISTORIAL DE CONVERSACIONES (en memoria, por sesión web)
-# ------------------------------------------------------------
-
 HISTORIALES = {}
-LIMITE_TURNOS = 40  # evita que el contexto crezca sin control
+LIMITE_TURNOS = 40 
 
 
 def historial_de(sid: str) -> list:
@@ -99,11 +72,6 @@ def historial_de(sid: str) -> list:
     if sid not in HISTORIALES:
         HISTORIALES[sid] = [{"role": "system", "content": MENSAJE_SISTEMA}]
     return HISTORIALES[sid]
-
-
-# ------------------------------------------------------------
-# 4. RUTAS DE LA APLICACIÓN WEB
-# ------------------------------------------------------------
 
 @app.get("/")
 def index():
@@ -136,24 +104,37 @@ def chat():
     mensajes = historial_de(session.get("sid", "anon"))
     mensajes.append({"role": "user", "content": mensaje})
 
-    try:
-        respuesta = ollama.chat(model=modelo_disponible(), messages=mensajes)
-    except Exception as exc:
-        mensajes.pop()  # la pregunta no pudo procesarse: se retira del historial
-        return jsonify({
-            "error": "No fue posible conectar con Ollama. "
-                     "Verifica que esté instalado y en ejecución (ollama serve).",
-            "detalle": str(exc),
-        }), 502
+    def generar():
+        """Transmite la respuesta token a token (NDJSON: {"chunk": ...})."""
+        contenido = ""
+        try:
+            flujo = ollama.chat(model=modelo_disponible(),
+                                messages=list(mensajes),
+                                stream=True,
+                                keep_alive=KEEP_ALIVE,
+                                options=OPCIONES_LLM)
+            for parte in flujo:
+                trozo = parte["message"]["content"]
+                if trozo:
+                    contenido += trozo
+                    yield json.dumps({"chunk": trozo}) + "\n"
+        except Exception as exc:
+            if not contenido:
+                mensajes.pop()  
+            yield json.dumps({
+                "error": "No fue posible conectar con Ollama. "
+                         "Verifica que esté instalado y en ejecución (ollama serve).",
+                "detalle": str(exc),
+            }) + "\n"
+            return
 
-    contenido = respuesta["message"]["content"]
-    mensajes.append({"role": "assistant", "content": contenido})
+        mensajes.append({"role": "assistant", "content": contenido})
 
-    # Recorte suave del historial conservando el mensaje de sistema
-    if len(mensajes) > LIMITE_TURNOS * 2 + 1:
-        del mensajes[1:3]
+        if len(mensajes) > LIMITE_TURNOS * 2 + 1:
+            del mensajes[1:3]
+        yield json.dumps({"done": True}) + "\n"
 
-    return jsonify({"respuesta": contenido})
+    return Response(generar(), mimetype="application/x-ndjson")
 
 
 @app.post("/api/resumen")
@@ -177,7 +158,9 @@ def resumen():
     )
     try:
         respuesta = ollama.chat(model=modelo_disponible(),
-                                messages=mensajes + [{"role": "user", "content": peticion}])
+                                messages=mensajes + [{"role": "user", "content": peticion}],
+                                keep_alive=KEEP_ALIVE,
+                                options=OPCIONES_LLM)
         return jsonify({"resumen": respuesta["message"]["content"]})
     except Exception as exc:
         return jsonify({"error": "Ollama no respondió al generar el resumen.",
@@ -193,10 +176,23 @@ def reiniciar():
     return jsonify({"ok": True})
 
 
+def precalentar_modelo():
+    """Carga el modelo en RAM en segundo plano para que la primera
+    pregunta no pague el costo de carga desde disco."""
+    try:
+        ollama.chat(model=modelo_disponible(),
+                    messages=[{"role": "user", "content": "ok"}],
+                    keep_alive=KEEP_ALIVE,
+                    options={"num_predict": 1})
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     print("=" * 55)
     print("  NUTRICHEF - Tutor inteligente (ejercicio 1)")
     print("  Modelo:", modelo_disponible())
     print("  Abrir:  http://127.0.0.1:5001")
     print("=" * 55)
+    threading.Thread(target=precalentar_modelo, daemon=True).start()
     app.run(host="127.0.0.1", port=5001, debug=False)
